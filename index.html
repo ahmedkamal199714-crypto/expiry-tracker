@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4a9d94">
+<title>متابعة التواريخ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%234a9d94'/><text x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>ت</text></svg>">
+</head>
+<body>
+<div class="shell">
+  <aside class="side" id="side">
+    <div class="brand"><span class="logo">ت</span><b>متابعة التواريخ</b></div>
+    <nav>
+      <button data-f="all" class="nav on">الكل <i id="c-all">0</i></button>
+      <button data-f="iqama" class="nav">الإقامات <i id="c-iqama">0</i></button>
+      <button data-f="license" class="nav">الرخص التجارية <i id="c-license">0</i></button>
+      <button data-f="cr" class="nav">السجلات التجارية <i id="c-cr">0</i></button>
+    </nav>
+    <div class="side-foot">
+      <button class="ghost" id="btn-xls">تصدير Excel</button>
+      <button class="ghost" id="btn-bak">نسخة احتياطية</button>
+      <label class="ghost">استرجاع<input type="file" id="file-res" accept=".json" hidden></label>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <main>
+    <header class="top">
+      <button class="menu" id="menu" aria-label="القائمة">☰</button>
+      <h1 id="title">كل التواريخ</h1>
+      <button class="btn" id="btn-add">+ إضافة</button>
+    </header>
+    <section class="stats">
+      <div class="card red"><span>منتهية</span><b id="s-exp">0</b></div>
+      <div class="card orange"><span>خلال 30 يوم</span><b id="s-30">0</b></div>
+      <div class="card yellow"><span>خلال 90 يوم</span><b id="s-90">0</b></div>
+      <div class="card green"><span>سارية</span><b id="s-ok">0</b></div>
+    </section>
+    <div class="tools">
+      <input id="q" type="search" placeholder="بحث بالاسم أو الرقم">
+      <select id="st">
+        <option value="all">كل الحالات</option>
+        <option value="exp">منتهية</option>
+        <option value="30">خلال 30 يوم</option>
+        <option value="90">خلال 90 يوم</option>
+        <option value="ok">سارية</option>
+      </select>
+    </div>
+    <section id="list" class="list"></section>
+    <p class="note">البيانات محفوظة على هذا الجهاز فقط. خذ نسخة احتياطية من القائمة بشكل دوري.</p>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <form class="sheet" id="form">
+    <h2 id="m-title">إضافة</h2>
+    <label>النوع
+      <select id="f-type">
+        <option value="iqama">إقامة</option>
+        <option value="license">رخصة تجارية</option>
+        <option value="cr">سجل تجاري</option>
+      </select>
+    </label>
+    <label><span id="l-name">الاسم</span><input id="f-name" required></label>
+    <label><span id="l-num">الرقم</span><input id="f-num" inputmode="numeric" dir="ltr"></label>
+    <label>تاريخ الانتهاء
+      <div class="seg"><button type="button" id="cal-g" class="on">ميلادي</button><button type="button" id="cal-h">هجري</button></div>
+    </label>
+    <div id="box-g"><input type="date" id="f-date" dir="ltr"></div>
+    <div id="box-h" class="hij" hidden dir="ltr">
+      <input id="h-y" inputmode="numeric" placeholder="سنة 1448" maxlength="4">
+      <input id="h-m" inputmode="numeric" placeholder="شهر 1-12" maxlength="2">
+      <input id="h-d" inputmode="numeric" placeholder="يوم 1-30" maxlength="2">
+    </div>
+    <div class="conv" id="conv"></div>
+    <label>ملاحظات<textarea id="f-note" rows="2"></textarea></label>
+    <div class="acts">
+      <button type="submit" class="btn">حفظ</button>
+      <button type="button" class="ghost dark" id="m-cancel">إلغاء</button>
+      <button type="button" class="del" id="m-del" hidden>حذف</button>
+    </div>
+  </form>
+</div>
+<div class="toast" id="toast"></div>
+<script src="js/app.js?v=1"></script>
+</body>
+</html>

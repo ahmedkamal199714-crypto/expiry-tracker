@@ -4,7 +4,17 @@ const TYPES={iqama:{n:'إقامة',nn:'اسم صاحب الإقامة',num:'رق
  license:{n:'رخصة تجارية',nn:'اسم المنشأة',num:'رقم الرخصة',p:'M3 9l1-5h16l1 5M3 9v11h18V9M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M10 20v-6h4v6'},
  cr:{n:'سجل تجاري',nn:'اسم المنشأة',num:'رقم السجل التجاري',p:'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7zM14 2v4a2 2 0 0 0 2 2h4M8 13h8M8 17h8'}};
 const $=s=>document.querySelector(s);
-let items=[];try{items=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
+const validDate=v=>{if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))return false;const[y,m,d]=v.split('-').map(Number);if(y<1900||y>2200)return false;const t=new Date(y,m-1,d);return t.getFullYear()===y&&t.getMonth()===m-1&&t.getDate()===d};
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function clean(r){if(!r||typeof r!=='object'||Array.isArray(r))return null;
+  if(!Object.prototype.hasOwnProperty.call(TYPES,r.type))return null;
+  if(typeof r.name!=='string'||!r.name.trim()||r.name.length>200)return null;
+  if(r.num!=null&&(typeof r.num!=='string'||r.num.length>60))return null;
+  if(r.note!=null&&(typeof r.note!=='string'||r.note.length>1000))return null;
+  if(!validDate(r.date))return null;
+  return{id:(typeof r.id==='string'&&/^[a-z0-9]{1,24}$/.test(r.id))?r.id:newId(),type:r.type,name:r.name.trim(),num:(r.num||'').trim(),date:r.date,note:(r.note||'').trim()}}
+function cleanAll(a){if(!Array.isArray(a)||a.length>5000)return null;const out=[],ids=new Set();for(const r of a){const c=clean(r);if(!c)return null;if(ids.has(c.id))c.id=newId();ids.add(c.id);out.push(c)}return out}
+let items=[];try{items=cleanAll(JSON.parse(localStorage.getItem(KEY)||'[]'))||[]}catch(e){items=[]}
 let filter='all',editing=null,cal='g';
 const save=()=>localStorage.setItem(KEY,JSON.stringify(items));
 const pad=n=>String(n).padStart(2,'0');
@@ -23,7 +33,7 @@ function fromHijri(y,m,d){
 const fmtG=s=>parse(s).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn',{day:'numeric',month:'long',year:'numeric'});
 const fmtH=s=>{const h=toHijri(parse(s));return h.d+'/'+h.m+'/'+h.y+' هـ'};
 function label(n){if(n<0)return'منتهية منذ '+(-n)+' يوم';if(n===0)return'تنتهي اليوم';if(n===1)return'تنتهي غداً';return'باقي '+n+' يوم'}
-const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function render(){
   const q=$('#q').value.trim().toLowerCase(),st=$('#st').value;
   const cnt={all:items.length,iqama:0,license:0,cr:0};items.forEach(i=>cnt[i.type]++);
@@ -33,7 +43,7 @@ function render(){
   $('#s-exp').textContent=sc.exp;$('#s-30').textContent=sc[30];$('#s-90').textContent=sc[90];$('#s-ok').textContent=sc.ok;
   const rows=base.filter(i=>(st==='all'||status(days(i.date))===st)&&(!q||(i.name+' '+i.num).toLowerCase().includes(q))).sort((a,b)=>a.date.localeCompare(b.date));
   $('#list').innerHTML=rows.length?rows.map(i=>{const n=days(i.date),s=status(n),t=TYPES[i.type];
-    return `<div class="row s-${s}" data-id="${i.id}"><div class="ico"><svg viewBox="0 0 24 24"><path d="${t.p}"/></svg></div><div class="info"><b>${esc(i.name)}</b><small>${t.n}${i.num?' · '+esc(i.num):''}</small></div><div class="when"><span class="badge">${label(n)}</span><small>${fmtG(i.date)} · ${fmtH(i.date)}</small></div></div>`}).join(''):`<div class="empty">${items.length?'لا توجد نتائج':'لسه مفيش بيانات. اضغط «إضافة» وابدأ.'}</div>`;
+    return `<div class="row s-${s}" data-id="${esc(i.id)}"><div class="ico"><svg viewBox="0 0 24 24"><path d="${t.p}"/></svg></div><div class="info"><b>${esc(i.name)}</b><small>${t.n}${i.num?' · '+esc(i.num):''}</small></div><div class="when"><span class="badge">${label(n)}</span><small>${fmtG(i.date)} · ${fmtH(i.date)}</small></div></div>`}).join(''):`<div class="empty">${items.length?'لا توجد نتائج':'لسه مفيش بيانات. اضغط «إضافة» وابدأ.'}</div>`;
 }
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),1800)}
 function setCal(c){cal=c;$('#cal-g').classList.toggle('on',c==='g');$('#cal-h').classList.toggle('on',c==='h');$('#box-g').hidden=c!=='g';$('#box-h').hidden=c!=='h';updConv()}
@@ -54,7 +64,8 @@ $('#cal-h').onclick=()=>{const d=$('#f-date').value;setCal('h');if(d){const h=to
 ['f-date','h-y','h-m','h-d'].forEach(id=>$('#'+id).addEventListener('input',updConv));
 $('#form').onsubmit=e=>{e.preventDefault();const date=curDate();if(!date){toast('أدخل تاريخ انتهاء صحيح');return}
   const rec={type:$('#f-type').value,name:$('#f-name').value.trim(),num:$('#f-num').value.trim(),date,note:$('#f-note').value.trim()};
-  if(editing){Object.assign(items.find(x=>x.id===editing),rec)}else items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),...rec});
+  const ok=clean({id:editing||undefined,...rec});if(!ok){toast('بيانات غير صالحة');return}
+  if(editing){Object.assign(items.find(x=>x.id===editing),ok)}else items.push(ok);
   save();close();render();toast('تم الحفظ')};
 $('#m-del').onclick=()=>{if(confirm('حذف هذا السجل؟')){items=items.filter(x=>x.id!==editing);save();close();render();toast('تم الحذف')}};
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav').forEach(x=>x.classList.remove('on'));b.classList.add('on');filter=b.dataset.f;$('#title').textContent=filter==='all'?'كل التواريخ':b.firstChild.textContent.trim();closeSide();render()});
@@ -63,7 +74,8 @@ const closeSide=()=>{$('#side').classList.remove('open');$('#scrim').classList.r
 $('#menu').onclick=()=>{$('#side').classList.add('open');$('#scrim').classList.add('open')};$('#scrim').onclick=closeSide;
 function dl(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 $('#btn-bak').onclick=()=>dl('expiry-backup-'+iso(today())+'.json',new Blob([JSON.stringify(items)],{type:'application/json'}));
-$('#file-res').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d))throw 0;if(confirm('استرجاع '+d.length+' سجل؟ هيستبدل البيانات الحالية.')){items=d;save();render();toast('تم الاسترجاع')}}catch(_){toast('ملف غير صالح')}e.target.value=''};
+$('#file-res').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2e6)throw 0;const d=cleanAll(JSON.parse(await f.text()));if(!d)throw 0;if(confirm('استرجاع '+d.length+' سجل؟ هيستبدل البيانات الحالية.')){items=d;save();render();toast('تم الاسترجاع')}}catch(_){toast('ملف غير صالح، لم يتم تغيير بياناتك')}e.target.value=''};
 $('#btn-xls').onclick=()=>{const rows=[['النوع','الاسم','الرقم','تاريخ الانتهاء (ميلادي)','تاريخ الانتهاء (هجري)','الأيام المتبقية','ملاحظات']].concat([...items].sort((a,b)=>a.date.localeCompare(b.date)).map(i=>[TYPES[i.type].n,i.name,i.num,i.date,fmtH(i.date),days(i.date),i.note||'']));
-  const csv='\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');dl('expiry-list-'+iso(today())+'.csv',new Blob([csv],{type:'text/csv;charset=utf-8'}))};
+  const cell=c=>{let t=String(c);if(typeof c==='string'&&/^[\s]*[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
+  const csv='\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n');dl('expiry-list-'+iso(today())+'.csv',new Blob([csv],{type:'text/csv;charset=utf-8'}))};
 render();

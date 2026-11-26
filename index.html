@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=2">
+<link rel="stylesheet" href="css/styles.css?v=3">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%234a9d94'/><text x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>ت</text></svg>">
 </head>
 <body>
@@ -22,6 +22,8 @@
       <button data-f="cr" class="nav">السجلات التجارية <i id="c-cr">0</i></button>
     </nav>
     <div class="side-foot">
+      <div class="sync" id="sync-s">غير متزامن</div>
+      <button class="ghost" id="btn-auth">دخول بجوجل للمزامنة</button>
       <button class="ghost" id="btn-xls">تصدير Excel</button>
       <button class="ghost" id="btn-bak">نسخة احتياطية</button>
       <label class="ghost">استرجاع<input type="file" id="file-res" accept=".json" hidden></label>
@@ -86,6 +88,6 @@
   </form>
 </div>
 <div class="toast" id="toast"></div>
-<script src="js/app.js?v=2"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>

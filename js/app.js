@@ -16,7 +16,7 @@ function clean(r){if(!r||typeof r!=='object'||Array.isArray(r))return null;
 function cleanAll(a){if(!Array.isArray(a)||a.length>5000)return null;const out=[],ids=new Set();for(const r of a){const c=clean(r);if(!c)return null;if(ids.has(c.id))c.id=newId();ids.add(c.id);out.push(c)}return out}
 let items=[];try{items=cleanAll(JSON.parse(localStorage.getItem(KEY)||'[]'))||[]}catch(e){items=[]}
 let filter='all',editing=null,cal='g';
-const save=()=>localStorage.setItem(KEY,JSON.stringify(items));
+const save=()=>{localStorage.setItem(KEY,JSON.stringify(items));cloudSync()};
 const pad=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
@@ -79,3 +79,51 @@ $('#btn-xls').onclick=()=>{const rows=[['النوع','الاسم','الرقم','
   const cell=c=>{let t=String(c);if(typeof c==='string'&&/^[\s]*[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
   const csv='\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n');dl('expiry-list-'+iso(today())+'.csv',new Blob([csv],{type:'text/csv;charset=utf-8'}))};
 render();
+
+/* ---------- مزامنة Firebase (مجموعة expiry، للمالك فقط) ---------- */
+const OWNER='ahmedkamal199714@gmail.com';
+let fb=null,cloudUser=null,cloudMap={},syncing=false,syncAgain=false;
+const setSync=(t,k)=>{const e=$('#sync-s');e.textContent=t;e.className='sync '+(k||'')};
+async function initCloud(){
+  try{
+    const cfg=await import('./firebase-config.js');
+    const V='10.12.2',B='https://www.gstatic.com/firebasejs/'+V+'/';
+    const[a,au,fs]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
+    const app=a.initializeApp(cfg.firebaseConfig,'expiry');
+    fb={au,fs,auth:au.getAuth(app),db:fs.getFirestore(app)};
+    au.onAuthStateChanged(fb.auth,onUser);
+    $('#btn-auth').onclick=async()=>{
+      if(cloudUser){await au.signOut(fb.auth);return}
+      try{await au.signInWithPopup(fb.auth,new au.GoogleAuthProvider())}
+      catch(e){try{await au.signInWithRedirect(fb.auth,new au.GoogleAuthProvider())}catch(_){toast('تعذر تسجيل الدخول')}}
+    };
+  }catch(e){setSync('المزامنة غير متاحة','err');$('#btn-auth').hidden=true}
+}
+async function onUser(u){
+  if(!u){cloudUser=null;cloudMap={};setSync('غير متزامن (البيانات على هذا الجهاز)');$('#btn-auth').textContent='دخول بجوجل للمزامنة';return}
+  if(u.email!==OWNER){await fb.au.signOut(fb.auth);toast('هذا الحساب غير مصرّح له');return}
+  cloudUser=u;$('#btn-auth').textContent='تسجيل الخروج';setSync('جاري المزامنة...');
+  try{
+    const snap=await fb.fs.getDocs(fb.fs.collection(fb.db,'expiry'));
+    const remote=[];cloudMap={};
+    snap.forEach(d=>{const c=clean({id:d.id,...d.data()});if(c){remote.push(c);cloudMap[c.id]=JSON.stringify(c)}});
+    const ids=new Set(remote.map(r=>r.id));
+    const merged=remote.concat(items.filter(i=>!ids.has(i.id)));
+    items=merged;localStorage.setItem(KEY,JSON.stringify(items));render();
+    await cloudSync(true);
+  }catch(e){setSync('فشلت المزامنة، البيانات محفوظة على الجهاز','err')}
+}
+async function cloudSync(){
+  if(!fb||!cloudUser)return;
+  if(syncing){syncAgain=true;return}
+  syncing=true;
+  try{
+    const{doc,setDoc,deleteDoc}=fb.fs,col=id=>doc(fb.db,'expiry',id);
+    const now={};items.forEach(i=>now[i.id]=JSON.stringify(i));
+    for(const id in now)if(cloudMap[id]!==now[id]){const{id:_,...rest}=JSON.parse(now[id]);await setDoc(col(id),rest);cloudMap[id]=now[id]}
+    for(const id in cloudMap)if(!(id in now)){await deleteDoc(col(id));delete cloudMap[id]}
+    setSync('متزامن ✓ '+new Date().toLocaleTimeString('ar-SA-u-nu-latn',{hour:'2-digit',minute:'2-digit'}),'ok');
+  }catch(e){setSync('فشلت المزامنة، البيانات محفوظة على الجهاز','err')}
+  syncing=false;if(syncAgain){syncAgain=false;cloudSync()}
+}
+initCloud();

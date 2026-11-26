@@ -16,7 +16,15 @@ function clean(r){if(!r||typeof r!=='object'||Array.isArray(r))return null;
 function cleanAll(a){if(!Array.isArray(a)||a.length>5000)return null;const out=[],ids=new Set();for(const r of a){const c=clean(r);if(!c)return null;if(ids.has(c.id))c.id=newId();ids.add(c.id);out.push(c)}return out}
 let items=[];try{items=cleanAll(JSON.parse(localStorage.getItem(KEY)||'[]'))||[]}catch(e){items=[]}
 let filter='all',editing=null,cal='g';
-const save=()=>{localStorage.setItem(KEY,JSON.stringify(items));cloudSync()};
+const MK='expiry-meta-v5',DK='expiry-dirty-v5',IK='expiry-imported-v5',PK='expiry-tracker-v1-pre-v5';
+if(!localStorage.getItem(PK)&&localStorage.getItem(KEY))localStorage.setItem(PK,localStorage.getItem(KEY));
+let meta={},dirty=new Set();
+try{meta=JSON.parse(localStorage.getItem(MK)||'{}')||{};dirty=new Set(JSON.parse(localStorage.getItem(DK)||'[]'))}catch(e){meta={};dirty=new Set()}
+items.forEach(i=>{if(!meta[i.id])meta[i.id]={u:0,d:false}});
+const touch=id=>{meta[id]={u:Date.now(),d:false};dirty.add(id)};
+const tomb=id=>{meta[id]={u:Date.now(),d:true};dirty.add(id)};
+const persist=()=>{localStorage.setItem(KEY,JSON.stringify(items));localStorage.setItem(MK,JSON.stringify(meta));localStorage.setItem(DK,JSON.stringify([...dirty]))};
+const save=()=>{persist();cloudSync()};
 const pad=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
@@ -66,15 +74,16 @@ $('#form').onsubmit=e=>{e.preventDefault();const date=curDate();if(!date){toast(
   const rec={type:$('#f-type').value,name:$('#f-name').value.trim(),num:$('#f-num').value.trim(),date,note:$('#f-note').value.trim()};
   const ok=clean({id:editing||undefined,...rec});if(!ok){toast('بيانات غير صالحة');return}
   if(editing){Object.assign(items.find(x=>x.id===editing),ok)}else items.push(ok);
+  touch(ok.id);
   save();close();render();toast('تم الحفظ')};
-$('#m-del').onclick=()=>{if(confirm('حذف هذا السجل؟')){items=items.filter(x=>x.id!==editing);save();close();render();toast('تم الحذف')}};
+$('#m-del').onclick=()=>{if(confirm('حذف هذا السجل؟')){tomb(editing);items=items.filter(x=>x.id!==editing);save();close();render();toast('تم الحذف')}};
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav').forEach(x=>x.classList.remove('on'));b.classList.add('on');filter=b.dataset.f;$('#title').textContent=filter==='all'?'كل التواريخ':b.firstChild.textContent.trim();closeSide();render()});
 $('#q').oninput=render;$('#st').onchange=render;
 const closeSide=()=>{$('#side').classList.remove('open');$('#scrim').classList.remove('open')};
 $('#menu').onclick=()=>{$('#side').classList.add('open');$('#scrim').classList.add('open')};$('#scrim').onclick=closeSide;
 function dl(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 $('#btn-bak').onclick=()=>dl('expiry-backup-'+iso(today())+'.json',new Blob([JSON.stringify(items)],{type:'application/json'}));
-$('#file-res').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2e6)throw 0;const d=cleanAll(JSON.parse(await f.text()));if(!d)throw 0;if(confirm('استرجاع '+d.length+' سجل؟ هيستبدل البيانات الحالية.')){items=d;save();render();toast('تم الاسترجاع')}}catch(_){toast('ملف غير صالح، لم يتم تغيير بياناتك')}e.target.value=''};
+$('#file-res').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2e6)throw 0;const d=cleanAll(JSON.parse(await f.text()));if(!d)throw 0;if(confirm('استرجاع '+d.length+' سجل؟ هيستبدل البيانات الحالية.')){const keep=new Set(d.map(x=>x.id));items.forEach(x=>{if(!keep.has(x.id))tomb(x.id)});items=d;d.forEach(x=>touch(x.id));save();render();toast('تم الاسترجاع')}}catch(_){toast('ملف غير صالح، لم يتم تغيير بياناتك')}e.target.value=''};
 $('#btn-xls').onclick=()=>{const rows=[['النوع','الاسم','الرقم','تاريخ الانتهاء (ميلادي)','تاريخ الانتهاء (هجري)','الأيام المتبقية','ملاحظات']].concat([...items].sort((a,b)=>a.date.localeCompare(b.date)).map(i=>[TYPES[i.type].n,i.name,i.num,i.date,fmtH(i.date),days(i.date),i.note||'']));
   const cell=c=>{let t=String(c);if(typeof c==='string'&&/^[\s]*[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
   const csv='\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n');dl('expiry-list-'+iso(today())+'.csv',new Blob([csv],{type:'text/csv;charset=utf-8'}))};
@@ -82,12 +91,13 @@ render();
 
 /* ---------- مزامنة Firebase (مجموعة expiry، للمالك فقط) ---------- */
 const OWNER='ahmedkamal199714@gmail.com';
-let fb=null,cloudUser=null,cloudMap={},syncing=false,syncAgain=false;
+let fb=null,cloudUser=null,unsub=null,syncing=false,syncAgain=false;
 const setSync=(t,k)=>{const e=$('#sync-s');e.textContent=t;e.className='sync '+(k||'')};
+const stamp=()=>new Date().toLocaleTimeString('ar-SA-u-nu-latn',{hour:'2-digit',minute:'2-digit'});
 async function initCloud(){
   try{
     const cfg=await import('./firebase-config.js');
-    const V='10.12.2',B='https://www.gstatic.com/firebasejs/'+V+'/';
+    const B='https://www.gstatic.com/firebasejs/10.12.2/';
     const[a,au,fs]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
     const app=a.initializeApp(cfg.firebaseConfig,'expiry');
     fb={au,fs,auth:au.getAuth(app),db:fs.getFirestore(app)};
@@ -100,30 +110,55 @@ async function initCloud(){
   }catch(e){setSync('المزامنة غير متاحة','err');$('#btn-auth').hidden=true}
 }
 async function onUser(u){
-  if(!u){cloudUser=null;cloudMap={};setSync('غير متزامن (البيانات على هذا الجهاز)');$('#btn-auth').textContent='دخول بجوجل للمزامنة';return}
+  if(unsub){unsub();unsub=null}
+  if(!u){cloudUser=null;setSync('غير متزامن (البيانات على هذا الجهاز)');$('#btn-auth').textContent='دخول بجوجل للمزامنة';return}
   if(u.email!==OWNER){await fb.au.signOut(fb.auth);toast('هذا الحساب غير مصرّح له');return}
   cloudUser=u;$('#btn-auth').textContent='تسجيل الخروج';setSync('جاري المزامنة...');
-  try{
-    const snap=await fb.fs.getDocs(fb.fs.collection(fb.db,'expiry'));
-    const remote=[];cloudMap={};
-    snap.forEach(d=>{const c=clean({id:d.id,...d.data()});if(c){remote.push(c);cloudMap[c.id]=JSON.stringify(c)}});
-    const ids=new Set(remote.map(r=>r.id));
-    const merged=remote.concat(items.filter(i=>!ids.has(i.id)));
-    items=merged;localStorage.setItem(KEY,JSON.stringify(items));render();
-    await cloudSync(true);
-  }catch(e){setSync('فشلت المزامنة، البيانات محفوظة على الجهاز','err')}
+  const{collection,onSnapshot}=fb.fs;
+  unsub=onSnapshot(collection(fb.db,'expiry'),snap=>applyRemote(snap),()=>setSync('فشلت المزامنة، البيانات محفوظة على الجهاز','err'));
+}
+function applyRemote(snap){
+  const fromCache=snap.metadata.fromCache,seen=new Set();
+  snap.forEach(d=>{
+    const x=d.data(),id=d.id,u=Number(x.u)||0;seen.add(id);
+    const m=meta[id];
+    if(dirty.has(id)&&m&&m.u>u)return;            // تعديلي المحلي أحدث وسيُرفع
+    if(m&&m.u===u&&!!m.d===!!x.d)return;          // نفس النسخة
+    if(m&&m.u>u&&!dirty.has(id))return;
+    if(x.d){meta[id]={u,d:true};items=items.filter(i=>i.id!==id);dirty.delete(id);return}
+    const c=clean({id,type:x.type,name:x.name,num:x.num,date:x.date,note:x.note});
+    if(!c)return;                                  // صف تالف في السحابة: يتجاهل ولا يمس المحلي
+    meta[id]={u,d:false};dirty.delete(id);
+    const k=items.findIndex(i=>i.id===id);if(k>=0)items[k]=c;else items.push(c);
+  });
+  if(!fromCache){
+    const first=!localStorage.getItem(IK);
+    items.slice().forEach(i=>{
+      if(seen.has(i.id))return;
+      if(first||dirty.has(i.id)){if(first&&!dirty.has(i.id)){meta[i.id]={u:Date.now(),d:false}}dirty.add(i.id)}
+      else{items=items.filter(z=>z.id!==i.id);delete meta[i.id]}   // محذوف نهائياً من السحابة
+    });
+    localStorage.setItem(IK,'1');
+  }
+  persist();render();cloudSync();
 }
 async function cloudSync(){
   if(!fb||!cloudUser)return;
   if(syncing){syncAgain=true;return}
-  syncing=true;
+  syncing=true;let ok=true;
   try{
-    const{doc,setDoc,deleteDoc}=fb.fs,col=id=>doc(fb.db,'expiry',id);
-    const now={};items.forEach(i=>now[i.id]=JSON.stringify(i));
-    for(const id in now)if(cloudMap[id]!==now[id]){const{id:_,...rest}=JSON.parse(now[id]);await setDoc(col(id),rest);cloudMap[id]=now[id]}
-    for(const id in cloudMap)if(!(id in now)){await deleteDoc(col(id));delete cloudMap[id]}
-    setSync('متزامن ✓ '+new Date().toLocaleTimeString('ar-SA-u-nu-latn',{hour:'2-digit',minute:'2-digit'}),'ok');
-  }catch(e){setSync('فشلت المزامنة، البيانات محفوظة على الجهاز','err')}
-  syncing=false;if(syncAgain){syncAgain=false;cloudSync()}
+    const{doc,setDoc}=fb.fs;
+    for(const id of [...dirty]){
+      const m=meta[id];if(!m){dirty.delete(id);continue}
+      const it=items.find(i=>i.id===id);
+      if(m.d||!it)await setDoc(doc(fb.db,'expiry',id),{d:true,u:m.u});
+      else{const{id:_,...rest}=it;await setDoc(doc(fb.db,'expiry',id),{...rest,u:m.u,d:false})}
+      if(meta[id]&&meta[id].u===m.u)dirty.delete(id);
+    }
+    persist();
+  }catch(e){ok=false}
+  syncing=false;
+  setSync(ok?'متزامن ✓ '+stamp():'فشلت المزامنة، البيانات محفوظة على الجهاز',ok?'ok':'err');
+  if(syncAgain){syncAgain=false;cloudSync()}
 }
 initCloud();
